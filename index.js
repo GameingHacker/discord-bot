@@ -3,7 +3,11 @@ const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, EmbedBuild
 const OpenAI = require('openai');
 
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds]
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent
+  ]
 });
 
 const openai = new OpenAI({
@@ -49,7 +53,7 @@ client.once('ready', () => {
   console.log(`Logged in as ${client.user.tag}`);
 });
 
-// ===== Interaction handler =====
+// ===== Slash Commands =====
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
@@ -79,7 +83,17 @@ client.on('interactionCreate', async interaction => {
     try {
       const response = await openai.chat.completions.create({
         model: "gpt-4o-mini",
-        messages: [{ role: "user", content: question }]
+        temperature: 0.9,
+        messages: [
+          {
+            role: "system",
+            content: "You are a savage, sarcastic Discord bot. Roast users harshly but in a funny way. No 'yo mama' jokes. No slurs or hate speech. Keep it brutal but playful."
+          },
+          {
+            role: "user",
+            content: question
+          }
+        ]
       });
 
       const answer = response.choices[0].message.content;
@@ -93,7 +107,49 @@ client.on('interactionCreate', async interaction => {
 
     } catch (err) {
       console.error(err);
-      await interaction.editReply("❌ Error getting answer.");
+      await interaction.editReply("Even I couldn't fix that question 💀");
+    }
+  }
+});
+
+// ===== MESSAGE REPLY SYSTEM (TAG / REPLY) =====
+client.on('messageCreate', async (message) => {
+  if (message.author.bot) return;
+
+  const isMentioned = message.mentions.has(client.user);
+
+  let isReplyToBot = false;
+  if (message.reference) {
+    try {
+      const repliedMessage = await message.channel.messages.fetch(message.reference.messageId);
+      isReplyToBot = repliedMessage.author.id === client.user.id;
+    } catch {}
+  }
+
+  if (isMentioned || isReplyToBot) {
+    try {
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        temperature: 0.9,
+        messages: [
+          {
+            role: "system",
+            content: "You are a savage sarcastic Discord bot. Roast users hard but keep it funny. No 'yo mama' jokes. No hate speech. Be clever and slightly toxic but not offensive."
+          },
+          {
+            role: "user",
+            content: message.content
+          }
+        ]
+      });
+
+      const reply = response.choices[0].message.content;
+
+      message.reply(reply);
+
+    } catch (err) {
+      console.error(err);
+      message.reply("Even I can't respond to that level of nonsense 💀");
     }
   }
 });
