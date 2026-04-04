@@ -72,14 +72,20 @@ const commands = [
         .setDescription('Your question')
         .setRequired(true)),
 
-  new SlashCommandBuilder().setName('info').setDescription('Server info'),
-  new SlashCommandBuilder().setName('help').setDescription('Commands'),
+  new SlashCommandBuilder()
+    .setName('info')
+    .setDescription('Server info'),
+
+  new SlashCommandBuilder()
+    .setName('help')
+    .setDescription('Commands'),
 
   new SlashCommandBuilder()
     .setName('mode')
     .setDescription('Change personality')
     .addStringOption(option =>
       option.setName('type')
+        .setDescription('Choose personality mode') // ✅ FIXED
         .setRequired(true)
         .addChoices(
           { name: 'Auto', value: 'auto' },
@@ -93,7 +99,10 @@ const commands = [
 const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
 
 (async () => {
-  await rest.put(Routes.applicationCommands("1489959561107472394"), { body: commands });
+  await rest.put(
+    Routes.applicationCommands("1489959561107472394"),
+    { body: commands }
+  );
 })();
 
 // ===== READY =====
