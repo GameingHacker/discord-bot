@@ -1,6 +1,7 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const OpenAI = require('openai');
+const fs = require('fs');
 
 const client = new Client({
   intents: [
@@ -14,143 +15,182 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
-// ===== Commands =====
+// ===== MEMORY SYSTEM =====
+const MEMORY_FILE = 'memory.json';
+
+function loadMemory() {
+  try {
+    return JSON.parse(fs.readFileSync(MEMORY_FILE, 'utf8'));
+  } catch {
+    return {};
+  }
+}
+
+function saveMemory(data) {
+  fs.writeFileSync(MEMORY_FILE, JSON.stringify(data, null, 2));
+}
+
+// ===== MODE SYSTEM =====
+let currentMode = "auto";
+
+function getPersonality(text, mode) {
+  if (mode !== "auto") return mode;
+
+  const msg = text.toLowerCase();
+
+  if (msg.includes("?") || msg.includes("how") || msg.includes("what")) return "helpful";
+  if (msg.includes("dumb") || msg.includes("stupid") || msg.includes("idiot")) return "savage";
+
+  return "chill";
+}
+
+function getSystemPrompt(mode) {
+  if (mode === "savage") {
+    return "You are a savage sarcastic Discord bot. Roast users harshly but funny. No 'yo mama' jokes. No hate speech.";
+  }
+  if (mode === "chill") {
+    return "You are a chill, funny Discord bot. Talk casually like a human.";
+  }
+  if (mode === "helpful") {
+    return "You are a helpful assistant. Give clear answers.";
+  }
+  return "Balanced Discord bot.";
+}
+
+// ===== INTERRUPT =====
+function shouldInterrupt() {
+  return Math.random() < 0.08;
+}
+
+// ===== COMMANDS =====
 const commands = [
   new SlashCommandBuilder()
     .setName('ask')
-    .setDescription('Ask the bot anything')
+    .setDescription('Ask anything')
     .addStringOption(option =>
       option.setName('question')
         .setDescription('Your question')
         .setRequired(true)),
 
-  new SlashCommandBuilder()
-    .setName('info')
-    .setDescription('Server information'),
+  new SlashCommandBuilder().setName('info').setDescription('Server info'),
+  new SlashCommandBuilder().setName('help').setDescription('Commands'),
 
   new SlashCommandBuilder()
-    .setName('help')
-    .setDescription('List commands')
+    .setName('mode')
+    .setDescription('Change personality')
+    .addStringOption(option =>
+      option.setName('type')
+        .setRequired(true)
+        .addChoices(
+          { name: 'Auto', value: 'auto' },
+          { name: 'Savage', value: 'savage' },
+          { name: 'Chill', value: 'chill' },
+          { name: 'Helpful', value: 'helpful' }
+        )),
 ];
 
-// ===== Register commands =====
+// ===== REGISTER =====
 const rest = new REST({ version: '10' }).setToken(process.env.TOKEN);
 
 (async () => {
-  try {
-    await rest.put(
-      Routes.applicationCommands("1489959561107472394"),
-      { body: commands }
-    );
-    console.log('Commands registered');
-  } catch (err) {
-    console.error(err);
-  }
+  await rest.put(Routes.applicationCommands("1489959561107472394"), { body: commands });
 })();
 
-// ===== Ready =====
+// ===== READY =====
 client.once('ready', () => {
   console.log(`Logged in as ${client.user.tag}`);
 });
 
-// ===== Slash Commands =====
+// ===== SLASH =====
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
-  if (interaction.commandName === 'info') {
-    const embed = new EmbedBuilder()
-      .setTitle("📌 Server Info")
-      .setDescription("This server is for chatting, events, and fun!")
-      .setColor(0x00AE86);
-
-    await interaction.reply({ embeds: [embed] });
-  }
-
-  if (interaction.commandName === 'help') {
-    const embed = new EmbedBuilder()
-      .setTitle("🛠 Commands")
-      .setDescription("/ask, /info, /help")
-      .setColor(0xFFD700);
-
-    await interaction.reply({ embeds: [embed] });
+  if (interaction.commandName === 'mode') {
+    currentMode = interaction.options.getString('type');
+    return interaction.reply(`🎭 Mode: ${currentMode}`);
   }
 
   if (interaction.commandName === 'ask') {
     const question = interaction.options.getString('question');
-
     await interaction.deferReply();
 
-    try {
-      const response = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        temperature: 0.9,
-        messages: [
-          {
-            role: "system",
-            content: "You are a savage, sarcastic Discord bot. Roast users harshly but in a funny way. No 'yo mama' jokes. No slurs or hate speech. Keep it brutal but playful."
-          },
-          {
-            role: "user",
-            content: question
-          }
-        ]
-      });
+    const mode = getPersonality(question, currentMode);
+    const systemPrompt = getSystemPrompt(mode);
 
-      const answer = response.choices[0].message.content;
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      temperature: 1,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: question }
+      ]
+    });
 
-      const embed = new EmbedBuilder()
-        .setTitle("💬 Answer")
-        .setDescription(answer)
-        .setColor(0x3498db);
+    const answer = response.choices[0].message.content;
 
-      await interaction.editReply({ embeds: [embed] });
+    const embed = new EmbedBuilder()
+      .setTitle(`💬 (${mode})`)
+      .setDescription(answer);
 
-    } catch (err) {
-      console.error(err);
-      await interaction.editReply("Even I couldn't fix that question 💀");
-    }
+    await interaction.editReply({ embeds: [embed] });
   }
 });
 
-// ===== MESSAGE REPLY SYSTEM (TAG / REPLY) =====
+// ===== MESSAGE SYSTEM =====
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
 
+  const memory = loadMemory();
+  const channelId = message.channel.id;
+
+  if (!memory[channelId]) memory[channelId] = [];
+
+  memory[channelId].push(`${message.author.username}: ${message.content}`);
+
+  if (memory[channelId].length > 20) memory[channelId].shift();
+
+  saveMemory(memory);
+
   const isMentioned = message.mentions.has(client.user);
 
-  let isReplyToBot = false;
+  let isReply = false;
   if (message.reference) {
     try {
-      const repliedMessage = await message.channel.messages.fetch(message.reference.messageId);
-      isReplyToBot = repliedMessage.author.id === client.user.id;
+      const msg = await message.channel.messages.fetch(message.reference.messageId);
+      isReply = msg.author.id === client.user.id;
     } catch {}
   }
 
-  if (isMentioned || isReplyToBot) {
-    try {
-      const response = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        temperature: 0.9,
-        messages: [
-          {
-            role: "system",
-            content: "You are a savage sarcastic Discord bot. Roast users hard but keep it funny. No 'yo mama' jokes, No hate speech, Be clever and slightly toxic but not offensive unless they absolutely ask for it. Act like a human. You can use all the emojis in the server and all."
-          },
-          {
-            role: "user",
-            content: message.content
-          }
-        ]
-      });
+  if (isMentioned || isReply || shouldInterrupt()) {
+    const detectedMode = getPersonality(message.content, currentMode);
+    const systemPrompt = getSystemPrompt(detectedMode);
 
-      const reply = response.choices[0].message.content;
+    const history = memory[channelId].join("\n");
 
-      message.reply(reply);
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      temperature: 1,
+      messages: [
+        {
+          role: "system",
+          content: `${systemPrompt}
 
-    } catch (err) {
-      console.error(err);
-      message.reply("Even I can't respond to that level of nonsense 💀");
-    }
+Conversation:
+${history}
+
+Be chaotic, funny, sarcastic, and engaging.
+Sometimes interrupt naturally. Keep responses short.`
+        },
+        {
+          role: "user",
+          content: message.content
+        }
+      ]
+    });
+
+    const reply = response.choices[0].message.content;
+
+    message.reply(reply);
   }
 });
 
