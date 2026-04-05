@@ -94,7 +94,7 @@ client.once('ready', () => {
   console.log(`Logged in as ${client.user.tag}`);
 });
 
-// ===== SLASH =====
+// ===== SLASH COMMANDS =====
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
 
@@ -154,7 +154,7 @@ client.on('interactionCreate', async interaction => {
   }
 });
 
-// ===== MESSAGE SYSTEM =====
+// ===== MESSAGE REPLY SYSTEM =====
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
 
@@ -174,7 +174,7 @@ client.on('messageCreate', async (message) => {
       const systemPrompt = getSystemPrompt(detectedMode);
 
       const response = await groq.chat.completions.create({
-        model: "llama3-70b-8192",
+        model: "mixtral-8x7b-32768",
         temperature: 0.9,
         messages: [
           { role: "system", content: systemPrompt },
