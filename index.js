@@ -130,7 +130,7 @@ client.on('interactionCreate', async interaction => {
       const systemPrompt = getSystemPrompt(mode);
 
       const response = await groq.chat.completions.create({
-        model: "mixtral-8x7b-32768",
+        model: "openai/gpt-oss-120b",
         temperature: 0.9,
         messages: [
           { role: "system", content: systemPrompt },
@@ -174,7 +174,7 @@ client.on('messageCreate', async (message) => {
       const systemPrompt = getSystemPrompt(detectedMode);
 
       const response = await groq.chat.completions.create({
-        model: "mixtral-8x7b-32768",
+        model: "openai/gpt-oss-120b",
         temperature: 0.9,
         messages: [
           { role: "system", content: systemPrompt },
